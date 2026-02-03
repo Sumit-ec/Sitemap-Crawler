@@ -1,23 +1,26 @@
 const Page = require("../models/page.model");
+const { normalizeUrl } = require("../utils/urlHelper");
 
 exports.getIncomingLinks = async (req, res) => {
   try {
-    const { url } = req.body;
+    const url = normalizeUrl(req.body.url);
+    const page = parseInt(req.body.page) || 1;
+    const limit = parseInt(req.body.limit) || 10;
+    const skip = (page - 1) * limit;
 
-    const linkingPages = await Page.find({ "outgoingLinks.url": url }).select("url");
+    const totalCount = await Page.countDocuments({ "outgoingLinks.url": url });
+    const linkingPages = await Page.find({ "outgoingLinks.url": url })
+      .select("url")
+      .skip(skip)
+      .limit(limit);
 
-    if (linkingPages.length === 0) {
-      return res.status(200).json({ 
-        message: "No pages link to this URL yet", 
-        count: 0, 
-        incomingLinks: [] 
-      });
-    }
-
-    res.json({ 
-      url, 
-      count: linkingPages.length, 
-      incomingLinks: linkingPages.map(p => p.url) 
+    res.json({
+      url,
+      totalCount,
+      page,
+      limit,
+      totalPages: Math.ceil(totalCount / limit),
+      incomingLinks: linkingPages.map(p => p.url)
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -26,10 +29,25 @@ exports.getIncomingLinks = async (req, res) => {
 
 exports.getOutgoingLinks = async (req, res) => {
   try {
-    const { url } = req.body;
-    const page = await Page.findOne({ url }).select("outgoingLinks");
-    if (!page) return res.status(404).json({ message: "Page not found" });
-    res.json({ url, outgoingLinks: page.outgoingLinks, count: page.outgoingLinks.length });
+    const url = normalizeUrl(req.body.url);
+    const page = parseInt(req.body.page) || 1;
+    const limit = parseInt(req.body.limit) || 10;
+
+    const pageDoc = await Page.findOne({ url });
+    if (!pageDoc) return res.status(404).json({ message: "Page not found" });
+
+    const totalCount = pageDoc.outgoingLinks.length;
+    const startIndex = (page - 1) * limit;
+    const paginatedLinks = pageDoc.outgoingLinks.slice(startIndex, startIndex + limit);
+
+    res.json({
+      url,
+      totalCount,
+      page,
+      limit,
+      totalPages: Math.ceil(totalCount / limit),
+      outgoingLinks: paginatedLinks
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -37,10 +55,12 @@ exports.getOutgoingLinks = async (req, res) => {
 
 exports.getTopLinkedPages = async (req, res) => {
   try {
-    const { n } = req.body;
-    const limitN = parseInt(n) || 10; 
+    const n = parseInt(req.body.n) || 10;
+    const page = parseInt(req.body.page) || 1;
+    const limit = parseInt(req.body.limit) || 10;
+    const skip = (page - 1) * limit;
 
-    const pages = await Page.aggregate([
+    const topPages = await Page.aggregate([
       {
         $project: {
           url: 1,
@@ -48,10 +68,17 @@ exports.getTopLinkedPages = async (req, res) => {
         }
       },
       { $sort: { incomingCount: -1 } },
-      { $limit: limitN }
+      { $limit: n }, 
+      { $skip: skip }, 
+      { $limit: limit }
     ]);
 
-    res.json(pages);
+    res.json({
+      requestedTopN: n,
+      page,
+      limit,
+      results: topPages
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

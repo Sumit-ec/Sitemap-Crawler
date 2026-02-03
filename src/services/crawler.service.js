@@ -1,6 +1,7 @@
 const axios = require("axios");
 const cheerio = require("cheerio");
 const Page = require("../models/page.model");
+const { normalizeUrl } = require("../utils/urlHelper");
 
 const BASE_DOMAIN = "https://www.edzy.ai";
 
@@ -10,8 +11,6 @@ async function fetchSitemapUrls() {
     const { data } = await axios.get(`${BASE_DOMAIN}/sitemap.xml`, { 
       timeout: 15000,
       headers: { 
-        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'accept-language': 'en-US,en;q=0.9',
         'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       }
     });
@@ -20,43 +19,31 @@ async function fetchSitemapUrls() {
     const urls = [];
     let match;
     while ((match = locRegex.exec(data)) !== null) {
-      urls.push(match[1].trim());
+      urls.push(normalizeUrl(match[1].trim()));
     }
 
     if (urls.length === 0) {
-  console.warn("⚠️ Sitemap blocked. Using manual URL list for testing...");
-  return [
-    "https://www.edzy.ai",
-    "https://www.edzy.ai/about",
-    "https://www.edzy.ai/blog",
-    "https://www.edzy.ai/cbse",
-    "https://www.edzy.ai/buy"
-  ]; 
-}
+      console.warn("⚠️ Sitemap blocked or empty. Using manual URL list for testing...");
+      return [
+        "https://www.edzy.ai",
+        "https://www.edzy.ai/about",
+        "https://www.edzy.ai/blog",
+        "https://www.edzy.ai/cbse",
+        "https://www.edzy.ai/buy"
+      ].map(url => normalizeUrl(url)); 
+    }
 
     return urls;
   } catch (err) {
     console.error("Error fetching sitemap:", err.message);
-    return [BASE_DOMAIN]; 
+    return [normalizeUrl(BASE_DOMAIN)];
   }
-}
-
-async function startCrawling() {
-  const urls = await fetchSitemapUrls();
-  console.log(`Initial URL queue size: ${urls.length}`);
-
-  for (const url of urls) {
-    await crawlPage(url);
-    await new Promise(resolve => setTimeout(resolve, 500)); 
-  }
-
-  await buildIncomingLinks();
-  console.log("Crawling and Linking completed successfully");
 }
 
 async function crawlPage(url) {
   try {
-    const { data } = await axios.get(url, { timeout: 10000 });
+    const normalizedTarget = normalizeUrl(url);
+    const { data } = await axios.get(normalizedTarget, { timeout: 10000 });
     const $ = cheerio.load(data);
     const outgoingLinks = [];
 
@@ -65,23 +52,22 @@ async function crawlPage(url) {
       if (!href || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("tel:")) return;
 
       try {
-        const resolvedUrl = new URL(href, url); 
+        const resolvedUrl = new URL(href, normalizedTarget);
         const isInternal = resolvedUrl.hostname.includes("edzy.ai");
         
         outgoingLinks.push({ 
-          url: resolvedUrl.href, 
+          url: normalizeUrl(resolvedUrl.href),
           linkType: isInternal ? "internal" : "external" 
         });
-      } catch (e) {
-      }
+      } catch (e) {}
     });
 
     await Page.findOneAndUpdate(
-      { url },
-      { url, html: data, outgoingLinks },
+      { url: normalizedTarget },
+      { url: normalizedTarget, html: data, outgoingLinks },
       { upsert: true, new: true }
     );
-    console.log(`Crawled: ${url}`);
+    console.log(`Crawled: ${normalizedTarget}`);
   } catch (err) {
     console.error(`Failed to crawl ${url}: ${err.message}`);
   }
@@ -106,10 +92,11 @@ async function buildIncomingLinks() {
 
 async function startCrawling() {
   const urls = await fetchSitemapUrls();
-  console.log(`Found ${urls.length} URLs in sitemap.`);
+  console.log(`Initial URL queue size: ${urls.length}`);
 
   for (const url of urls) {
     await crawlPage(url);
+    await new Promise(resolve => setTimeout(resolve, 500)); 
   }
 
   await buildIncomingLinks();
