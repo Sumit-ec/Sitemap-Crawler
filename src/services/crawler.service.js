@@ -23,12 +23,6 @@ async function fetchSitemapUrls() {
       urls.push(match[1].trim());
     }
 
-    // if (urls.length === 0) {
-    //   console.warn("⚠️ Sitemap returned 0 URLs (Site blocked the bot). Switching to Homepage Crawler mode...");
-    //   // Return just the homepage as a starting point
-    //   return [BASE_DOMAIN]; 
-    // }
-
     if (urls.length === 0) {
   console.warn("⚠️ Sitemap blocked. Using manual URL list for testing...");
   return [
@@ -43,7 +37,7 @@ async function fetchSitemapUrls() {
     return urls;
   } catch (err) {
     console.error("Error fetching sitemap:", err.message);
-    return [BASE_DOMAIN]; // Fallback to homepage on error
+    return [BASE_DOMAIN]; 
   }
 }
 
@@ -51,15 +45,13 @@ async function startCrawling() {
   const urls = await fetchSitemapUrls();
   console.log(`Initial URL queue size: ${urls.length}`);
 
-  // Loop through URLs
   for (const url of urls) {
     await crawlPage(url);
-    // Add a small delay so we don't get banned
     await new Promise(resolve => setTimeout(resolve, 500)); 
   }
 
   await buildIncomingLinks();
-  console.log("🚀 Crawling and Linking completed successfully");
+  console.log("Crawling and Linking completed successfully");
 }
 
 async function crawlPage(url) {
@@ -89,9 +81,9 @@ async function crawlPage(url) {
       { url, html: data, outgoingLinks },
       { upsert: true, new: true }
     );
-    console.log(`✅ Crawled: ${url}`);
+    console.log(`Crawled: ${url}`);
   } catch (err) {
-    console.error(`❌ Failed to crawl ${url}: ${err.message}`);
+    console.error(`Failed to crawl ${url}: ${err.message}`);
   }
 }
 
@@ -121,7 +113,7 @@ async function startCrawling() {
   }
 
   await buildIncomingLinks();
-  console.log("🚀 Crawling and Linking completed successfully");
+  console.log("Crawling and Linking completed successfully");
 }
 
 module.exports = { startCrawling };
